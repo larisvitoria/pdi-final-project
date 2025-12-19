@@ -43,7 +43,7 @@ To develop and validate a **deep learning–based hybrid pipeline** capable of:
 ---
 
 ## 🧠 Pipeline Architecture
-
+```
 Breast Image
       ↓
 [ Lesion Segmentation ]
@@ -53,7 +53,7 @@ ROI (Region of Interest)
 [ Pathological Classification ]
       ↓
 Benign | Malignant
-
+```
 The pipeline is designed to be **flexible**, allowing model substitution at each stage without disrupting the overall workflow.
 
 ---
@@ -107,12 +107,7 @@ The pipeline is designed to be **flexible**, allowing model substitution at each
 
 ## 🛠️ Technologies Used
 
-* Python
-* PyTorch / TensorFlow
-* OpenCV
-* NumPy / Pandas
-* Matplotlib / Seaborn
-* Scikit-learn
+> ⚠️ Work in progress
 
 ---
 
