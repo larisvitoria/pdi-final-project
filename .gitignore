@@ -78,6 +78,16 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 
+# Local datasets and generated artifacts
+cbis-ddsm-breast-cancer-image-dataset/
+preprocessed_output/
+checkpoints/
+preds/
+qa_overlays/
+*.pt
+*.npy
+*.png
+
 # IPython
 profile_default/
 ipython_config.py
