@@ -61,10 +61,10 @@ class Config:
     
     WEIGHT_DECAY = 1e-2
     DROPOUT_RATE = 0.5
-    POS_WEIGHT = 1.2                # Balanced penalty
+    POS_WEIGHT = 2.0                # Balanced penalty
     PATIENCE = 20                   # Early Stopping
     
-    DECISION_THRESHOLD = 0.55       # Slightly conservative
+    DECISION_THRESHOLD = 0.4        # Slightly conservative
 
     # 1.4 System
     NUM_WORKERS = 2 
