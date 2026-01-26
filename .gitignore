@@ -85,6 +85,8 @@ checkpoints/
 preds/
 qa_overlays/
 *.pt
+*.pth
+*.ckpt
 *.npy
 *.png
 

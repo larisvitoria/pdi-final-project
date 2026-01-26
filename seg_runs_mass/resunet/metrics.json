@@ -1,0 +1,10 @@
+{
+  "model": "resunet",
+  "best_val_dice": 0.753680569510306,
+  "pos_weight": 2.7219302654266357,
+  "threshold": 0.5,
+  "best_ckpt": "seg_runs_mass/resunet/resunet_best.pt",
+  "test_loss": 0.4028801055891173,
+  "test_dice": 0.7466691540820258,
+  "test_iou": 0.6217225044965744
+}
