@@ -1,0 +1,11 @@
+{
+  "model": "attunet",
+  "best_val_dice": 0.760486206700725,
+  "pos_weight": 2.5922579765319824,
+  "threshold": 0.5,
+  "best_ckpt": "seg_runs_mass_fp/attunet/attunet_best.pt",
+  "test_loss": 0.43934665833200726,
+  "test_dice": 0.7607311947005135,
+  "test_iou": 0.638828205210822,
+  "test_empty_pred_ratio": 0.009216589861751152
+}

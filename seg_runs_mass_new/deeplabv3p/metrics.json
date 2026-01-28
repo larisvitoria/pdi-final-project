@@ -1,0 +1,11 @@
+{
+  "model": "deeplabv3p",
+  "best_val_dice": 0.8406467359574115,
+  "pos_weight": 2.6377756595611572,
+  "threshold": 0.5,
+  "best_ckpt": "seg_runs_mass_new/deeplabv3p/deeplabv3p_best.pt",
+  "test_loss": 0.33579499531875956,
+  "test_dice": 0.8305761315605857,
+  "test_iou": 0.7314481458880685,
+  "test_empty_pred_ratio": 0.009216589861751152
+}

@@ -89,6 +89,8 @@ qa_overlays/
 *.ckpt
 *.npy
 *.png
+*.jpeg
+*.jpg
 
 # IPython
 profile_default/

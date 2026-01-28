@@ -77,6 +77,20 @@ class Config:
         "resnext50_32x4d"
         ]
 
+    @staticmethod
+    def resolve_cache_dir() -> str:
+        default_local = "cbis-ddsm-breast-cancer-image-dataset"
+        candidate_paths = [
+            Config.CACHE_DIR,
+            os.path.join(os.getcwd(), default_local),
+            default_local,
+            "/kaggle/input/cbis-ddsm-breast-cancer-image-dataset",
+        ]
+        for path in candidate_paths:
+            if os.path.isfile(os.path.join(path, "csv", "mass_case_description_train_set.csv")):
+                return path
+        return Config.CACHE_DIR
+
 
 # 2. UTILITIES & REPRODUCIBILITY
 
@@ -162,7 +176,7 @@ class ImageProcessor:
 
 class DataManager:
     def __init__(self):
-        self.base_path = Config.CACHE_DIR
+        self.base_path = Config.resolve_cache_dir()
         os.makedirs(Config.PROCESSED_DIR, exist_ok=True)
         self.manifest_path = os.path.join(Config.PROCESSED_DIR, Config.MANIFEST_FILE)
 
@@ -354,7 +368,7 @@ def train_engine(model_name: str, loaders: dict):
     # FIX: Safer AMP initialization
     scaler = amp.GradScaler(enabled=(Config.DEVICE.type == 'cuda'))
     
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=4, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=4)
 
     best_auc = 0.0
     patience_counter = 0

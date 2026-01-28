@@ -12,6 +12,7 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision import models as tv_models
 from torch.utils.data import Dataset, DataLoader
 
 
@@ -55,6 +56,136 @@ class ResidualBlock(nn.Module):
         out = self.bn2(self.conv2(out))
         out = self.act(out + identity)
         return out
+
+
+class UNetPlusPlus(nn.Module):
+    def __init__(self, in_ch=1, base=32):
+        super().__init__()
+        self.pool = nn.MaxPool2d(2)
+
+        self.conv0_0 = DoubleConv(in_ch, base)
+        self.conv1_0 = DoubleConv(base, base * 2)
+        self.conv2_0 = DoubleConv(base * 2, base * 4)
+        self.conv3_0 = DoubleConv(base * 4, base * 8)
+        self.conv4_0 = DoubleConv(base * 8, base * 16)
+
+        self.conv0_1 = DoubleConv(base * 3, base)
+        self.conv1_1 = DoubleConv(base * 6, base * 2)
+        self.conv2_1 = DoubleConv(base * 12, base * 4)
+        self.conv3_1 = DoubleConv(base * 24, base * 8)
+
+        self.conv0_2 = DoubleConv(base * 4, base)
+        self.conv1_2 = DoubleConv(base * 8, base * 2)
+        self.conv2_2 = DoubleConv(base * 16, base * 4)
+
+        self.conv0_3 = DoubleConv(base * 5, base)
+        self.conv1_3 = DoubleConv(base * 10, base * 2)
+
+        self.conv0_4 = DoubleConv(base * 6, base)
+
+        self.out = nn.Conv2d(base, 1, 1)
+
+    @staticmethod
+    def _up(x: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
+        return F.interpolate(x, size=ref.shape[2:], mode="bilinear", align_corners=False)
+
+    def forward(self, x):
+        x0_0 = self.conv0_0(x)
+        x1_0 = self.conv1_0(self.pool(x0_0))
+        x2_0 = self.conv2_0(self.pool(x1_0))
+        x3_0 = self.conv3_0(self.pool(x2_0))
+        x4_0 = self.conv4_0(self.pool(x3_0))
+
+        x0_1 = self.conv0_1(torch.cat([x0_0, self._up(x1_0, x0_0)], dim=1))
+        x1_1 = self.conv1_1(torch.cat([x1_0, self._up(x2_0, x1_0)], dim=1))
+        x2_1 = self.conv2_1(torch.cat([x2_0, self._up(x3_0, x2_0)], dim=1))
+        x3_1 = self.conv3_1(torch.cat([x3_0, self._up(x4_0, x3_0)], dim=1))
+
+        x0_2 = self.conv0_2(torch.cat([x0_0, x0_1, self._up(x1_1, x0_0)], dim=1))
+        x1_2 = self.conv1_2(torch.cat([x1_0, x1_1, self._up(x2_1, x1_0)], dim=1))
+        x2_2 = self.conv2_2(torch.cat([x2_0, x2_1, self._up(x3_1, x2_0)], dim=1))
+
+        x0_3 = self.conv0_3(torch.cat([x0_0, x0_1, x0_2, self._up(x1_2, x0_0)], dim=1))
+        x1_3 = self.conv1_3(torch.cat([x1_0, x1_1, x1_2, self._up(x2_2, x1_0)], dim=1))
+
+        x0_4 = self.conv0_4(torch.cat([x0_0, x0_1, x0_2, x0_3, self._up(x1_3, x0_0)], dim=1))
+
+        return self.out(x0_4)
+
+
+class ConvBNReLU(nn.Module):
+    def __init__(self, in_ch, out_ch, kernel_size=3, stride=1, padding=1, dilation=1):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, kernel_size, stride, padding, dilation=dilation, bias=False),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(inplace=True),
+        )
+
+    def forward(self, x):
+        return self.block(x)
+
+
+class ASPP(nn.Module):
+    def __init__(self, in_ch, out_ch, rates=(6, 12, 18)):
+        super().__init__()
+        self.conv1 = ConvBNReLU(in_ch, out_ch, kernel_size=1, padding=0)
+        self.conv2 = ConvBNReLU(in_ch, out_ch, kernel_size=3, padding=rates[0], dilation=rates[0])
+        self.conv3 = ConvBNReLU(in_ch, out_ch, kernel_size=3, padding=rates[1], dilation=rates[1])
+        self.conv4 = ConvBNReLU(in_ch, out_ch, kernel_size=3, padding=rates[2], dilation=rates[2])
+        self.image_pool = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            ConvBNReLU(in_ch, out_ch, kernel_size=1, padding=0),
+        )
+        self.project = ConvBNReLU(out_ch * 5, out_ch, kernel_size=1, padding=0)
+
+    def forward(self, x):
+        size = x.shape[2:]
+        x1 = self.conv1(x)
+        x2 = self.conv2(x)
+        x3 = self.conv3(x)
+        x4 = self.conv4(x)
+        x5 = self.image_pool(x)
+        x5 = F.interpolate(x5, size=size, mode="bilinear", align_corners=False)
+        x = torch.cat([x1, x2, x3, x4, x5], dim=1)
+        return self.project(x)
+
+
+class DeepLabV3Plus(nn.Module):
+    def __init__(self, in_ch=1, base_channels=256):
+        super().__init__()
+        self.backbone = tv_models.resnet50(weights=None)
+        if in_ch != 3:
+            self.backbone.conv1 = nn.Conv2d(in_ch, 64, kernel_size=7, stride=2, padding=3, bias=False)
+
+        self.aspp = ASPP(2048, base_channels)
+        self.low_proj = ConvBNReLU(256, 48, kernel_size=1, padding=0)
+        self.decoder = nn.Sequential(
+            ConvBNReLU(base_channels + 48, base_channels, kernel_size=3, padding=1),
+            ConvBNReLU(base_channels, base_channels, kernel_size=3, padding=1),
+        )
+        self.out = nn.Conv2d(base_channels, 1, kernel_size=1)
+
+    def forward(self, x):
+        input_size = x.shape[2:]
+        x = self.backbone.conv1(x)
+        x = self.backbone.bn1(x)
+        x = self.backbone.relu(x)
+        x = self.backbone.maxpool(x)
+
+        low = self.backbone.layer1(x)
+        x = self.backbone.layer2(low)
+        x = self.backbone.layer3(x)
+        x = self.backbone.layer4(x)
+
+        x = self.aspp(x)
+        x = F.interpolate(x, size=low.shape[2:], mode="bilinear", align_corners=False)
+        low = self.low_proj(low)
+        x = torch.cat([x, low], dim=1)
+        x = self.decoder(x)
+        x = self.out(x)
+        x = F.interpolate(x, size=input_size, mode="bilinear", align_corners=False)
+        return x
 
 
 class UNet(nn.Module):
@@ -224,6 +355,10 @@ def build_model(name: str, base: int = 32) -> nn.Module:
         return AttentionUNet(in_ch=1, base=base)
     if name in ("resunet", "res_unet"):
         return ResUNet(in_ch=1, base=base)
+    if name in ("unetpp", "unetplusplus", "unet++"):
+        return UNetPlusPlus(in_ch=1, base=base)
+    if name in ("deeplabv3p", "deeplabv3plus", "deeplabv3+"):
+        return DeepLabV3Plus(in_ch=1)
     raise ValueError(f"Unknown model: {name}")
 
 
@@ -490,6 +625,9 @@ def train_one(
     lr: float,
     weight_decay: float,
     threshold: float,
+    tversky_alpha: float,
+    tversky_beta: float,
+    tversky_gamma: float,
     out_dir: str,
     model_name: str,
     use_amp: bool = True,
@@ -499,7 +637,7 @@ def train_one(
 
     pos_weight = compute_pos_weight_from_loader(train_loader, device=device)
     bce = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-    ftl = FocalTverskyLoss(alpha=0.3, beta=0.7, gamma=0.75)
+    ftl = FocalTverskyLoss(alpha=tversky_alpha, beta=tversky_beta, gamma=tversky_gamma)
 
     def loss_fn(logits, targets):
         return 0.25 * bce(logits, targets) + 0.75 * ftl(logits, targets)
@@ -547,6 +685,8 @@ def train_one(
         model.eval()
         val_losses = []
         dices = []
+        empty_pred_masks = 0
+        total_masks = 0
         with torch.no_grad():
             for x, y in tqdm(val_loader, desc=f"[{model_name}] Val {epoch}/{epochs}", leave=False):
                 x = x.to(device, non_blocking=True)
@@ -555,12 +695,21 @@ def train_one(
                 loss = loss_fn(logits, y)
                 val_losses.append(float(loss.item()))
                 dices.append(float(dice_coeff_from_logits(logits, y, threshold=threshold).item()))
+                preds = (torch.sigmoid(logits) > threshold).float()
+                empty_pred_masks += int((preds.view(preds.size(0), -1).sum(dim=1) == 0).sum().item())
+                total_masks += int(preds.size(0))
 
         mean_tr = float(np.mean(tr_losses)) if tr_losses else float("nan")
         mean_val = float(np.mean(val_losses)) if val_losses else float("nan")
         mean_dice = float(np.mean(dices)) if dices else 0.0
+        empty_ratio = (empty_pred_masks / total_masks) if total_masks > 0 else 0.0
 
-        print(f"[{model_name}] epoch={epoch:03d} train_loss={mean_tr:.4f} val_loss={mean_val:.4f} val_dice@{threshold:.2f}={mean_dice:.4f}")
+        print(
+            f"[{model_name}] epoch={epoch:03d} "
+            f"train_loss={mean_tr:.4f} val_loss={mean_val:.4f} "
+            f"val_dice@{threshold:.2f}={mean_dice:.4f} "
+            f"empty_pred_ratio={empty_ratio:.3f}"
+        )
 
         if mean_dice > best_val:
             best_val = mean_dice
@@ -570,6 +719,9 @@ def train_one(
                     "state_dict": model.state_dict(),
                     "threshold": threshold,
                     "pos_weight": float(pos_weight.item()),
+                    "tversky_alpha": tversky_alpha,
+                    "tversky_beta": tversky_beta,
+                    "tversky_gamma": tversky_gamma,
                 },
                 best_path,
             )
@@ -577,7 +729,16 @@ def train_one(
     return {"best_val_dice": best_val, "pos_weight": float(pos_weight.item()), "threshold": threshold, "best_ckpt": best_path}
 
 
-def evaluate(model: nn.Module, ckpt_path: str, loader: DataLoader, device: torch.device, threshold: float) -> Dict:
+def evaluate(
+    model: nn.Module,
+    ckpt_path: str,
+    loader: DataLoader,
+    device: torch.device,
+    threshold: float,
+    tversky_alpha: float,
+    tversky_beta: float,
+    tversky_gamma: float,
+) -> Dict:
     ckpt = torch.load(ckpt_path, map_location=device)
     model.load_state_dict(ckpt["state_dict"])
     model = model.to(device)
@@ -586,9 +747,11 @@ def evaluate(model: nn.Module, ckpt_path: str, loader: DataLoader, device: torch
     losses = []
     dices = []
     ious = []
+    empty_pred_masks = 0
+    total_masks = 0
 
     bce = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([ckpt.get("pos_weight", 1.0)], device=device))
-    ftl = FocalTverskyLoss(alpha=0.3, beta=0.7, gamma=0.75)
+    ftl = FocalTverskyLoss(alpha=tversky_alpha, beta=tversky_beta, gamma=tversky_gamma)
 
     def loss_fn(logits, targets):
         return 0.25 * bce(logits, targets) + 0.75 * ftl(logits, targets)
@@ -601,8 +764,17 @@ def evaluate(model: nn.Module, ckpt_path: str, loader: DataLoader, device: torch
             losses.append(float(loss_fn(logits, y).item()))
             dices.append(float(dice_coeff_from_logits(logits, y, threshold=threshold).item()))
             ious.append(float(iou_from_logits(logits, y, threshold=threshold).item()))
+            preds = (torch.sigmoid(logits) > threshold).float()
+            empty_pred_masks += int((preds.view(preds.size(0), -1).sum(dim=1) == 0).sum().item())
+            total_masks += int(preds.size(0))
 
-    return {"test_loss": float(np.mean(losses)), "test_dice": float(np.mean(dices)), "test_iou": float(np.mean(ious))}
+    empty_ratio = (empty_pred_masks / total_masks) if total_masks > 0 else 0.0
+    return {
+        "test_loss": float(np.mean(losses)),
+        "test_dice": float(np.mean(dices)),
+        "test_iou": float(np.mean(ious)),
+        "test_empty_pred_ratio": float(empty_ratio),
+    }
 
 
 def parse_args():
@@ -610,7 +782,7 @@ def parse_args():
     ap.add_argument("--base_path", type=str, default="cbis-ddsm-breast-cancer-image-dataset")
     ap.add_argument("--manifest", type=str, default="preprocessed_output/manifest_mass.csv")
     ap.add_argument("--out_dir", type=str, default="seg_runs_mass")
-    ap.add_argument("--models", type=str, default="resunet", help="Comma-separated: unet,attunet,resunet")
+    ap.add_argument("--models", type=str, default="resunet", help="Comma-separated: unet,attunet,resunet,unetpp,deeplabv3p")
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--batch_size", type=int, default=8)
     ap.add_argument("--patch_size", type=int, default=512)
@@ -618,6 +790,9 @@ def parse_args():
     ap.add_argument("--weight_decay", type=float, default=1e-4)
     ap.add_argument("--num_workers", type=int, default=2)
     ap.add_argument("--threshold", type=float, default=0.5)
+    ap.add_argument("--tversky_alpha", type=float, default=0.7)
+    ap.add_argument("--tversky_beta", type=float, default=0.3)
+    ap.add_argument("--tversky_gamma", type=float, default=0.75)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--base_channels", type=int, default=32)
     ap.add_argument("--no_amp", action="store_true")
@@ -686,13 +861,25 @@ def main():
             lr=args.lr,
             weight_decay=args.weight_decay,
             threshold=args.threshold,
+            tversky_alpha=args.tversky_alpha,
+            tversky_beta=args.tversky_beta,
+            tversky_gamma=args.tversky_gamma,
             out_dir=run_dir,
             model_name=mname,
             use_amp=(not args.no_amp),
         )
 
         model2 = build_model(mname, base=args.base_channels)
-        test_metrics = evaluate(model2, res["best_ckpt"], test_loader, device=device, threshold=args.threshold)
+        test_metrics = evaluate(
+            model2,
+            res["best_ckpt"],
+            test_loader,
+            device=device,
+            threshold=args.threshold,
+            tversky_alpha=args.tversky_alpha,
+            tversky_beta=args.tversky_beta,
+            tversky_gamma=args.tversky_gamma,
+        )
 
         final = {"model": mname, **res, **test_metrics}
         all_results[mname] = final
