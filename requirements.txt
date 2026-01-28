@@ -31,3 +31,6 @@ psutil>=5.9.0
 # Optional: For notebook support (if running in Jupyter)
 jupyter>=1.0.0
 ipykernel>=6.25.0
+
+# Optional: UI
+streamlit>=1.32.0
