@@ -73,16 +73,13 @@ The pipeline is designed to be **flexible**, allowing model substitution at each
 ### 🧪 Classification
 
 * **EfficientNetV2-S**
-  An optimized convolutional neural network with high performance and parameter efficiency.
+  An optimized convolutional neural network designed for high performance and parameter efficiency, offering faster training and a strong balance between accuracy and computational cost.
 
-* **VGG16**
-  A deep, sequential architecture effective for extracting basic patterns and textures.
+* **DenseNet121**
+  A convolutional neural network that employs dense connections between layers, promoting feature reuse and improving gradient flow, which is effective for capturing subtle patterns in medical images.
 
-* **ResNet50**
-  Introduces residual connections (*skip connections*), facilitating training of deep networks and improving convergence stability.
-
-* **Vision Transformer (ViT)**
-  A self-attention–based approach capable of modeling global relationships between image regions, suitable for complex malignancy patterns.
+* **ResNeXt50 (32×4d)**
+  An extension of ResNet that introduces grouped convolutions to increase model cardinality, enhancing representational power without significantly increasing computational complexity.
 
 ---
 
@@ -107,7 +104,9 @@ The pipeline is designed to be **flexible**, allowing model substitution at each
 
 ## 🛠️ Technologies Used
 
-> ⚠️ Work in progress
+The project was developed in Python using PyTorch for the implementation, training, and evaluation of deep learning models. A transfer learning approach with ImageNet pre-trained weights was adopted to improve convergence and generalization on medical images.
+The pipeline follows a modular design, combining deep learning–based segmentation and classification, with techniques such as data augmentation, weighted loss functions, regularization, and ensemble learning to handle class imbalance and reduce overfitting.
+Experiments were conducted on the CBIS-DDSM dataset, and project management was supported using Trello to ensure organized and reproducible development.
 
 ---
 
